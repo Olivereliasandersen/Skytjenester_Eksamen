@@ -17,34 +17,24 @@ def getArguments():
     args = parser.parse_args()
     return args
 
+#Application
+def application():
+    args
+
 #Header#
 header_format = '!HHHH'
 
 def create_packet(seq, ack, flags, win, data):
-    #creates a packet with header information and application data
-    #the input arguments are sequence number, acknowledgment number
-    #flags (we only use 4 bits),  receiver window and application data 
-    #struct.pack returns a bytes object containing the header values
-    #packed according to the header_format !IIHH
     header = pack (header_format, seq, ack, flags, win)
-
-    #once we create a header, we add the application data to create a packet
-    #of 1472 bytes
     packet = header + data
     print (f'packet containing header + data of size {len(packet)}') #just to show the length of the packet
     return packet
 
 def parse_header(header):
-    #taks a header of 12 bytes as an argument,
-    #unpacks the value based on the specified header_format
-    #and return a tuple with the values
     header_from_msg = unpack(header_format, header)
-    #parse_flags(flags)
     return header_from_msg
 
 def parse_flags(flags):
-    #we only parse the first 3 fields because we're not 
-    #using rst in our implementation
     syn = flags & (1 << 3)
     ack = flags & (1 << 2)
     fin = flags & (1 << 1)
@@ -53,6 +43,11 @@ def parse_flags(flags):
 #SERVER#
 def startServer(serverIp, serverPort, discard_seq):
     flags = 0
+    sequence_number = 0
+    acknowledgment_number = 1
+    window = 0
+
+    file_data = {}
 
     serverSocket = socket(AF_INET, SOCK_DGRAM)
     serverSocket.bind((serverIp, serverPort))
@@ -79,25 +74,52 @@ def startServer(serverIp, serverPort, discard_seq):
             print("FIN ACK packet is sent")
             break
         
+        
 #CLIENT#
 def startClient(serverIp, serverPort, windowSize):
     clientSocket = socket(AF_INET, SOCK_DGRAM)
     serverAddress = (serverIp, serverPort)
+    print("Connection Establishment Phase:\n")
     print("SYN packet is sent")
     clientSocket.sendto(b"SYN", serverAddress)
 
+    sequence_number = 0
+    acknowledgment_number = 0
+    flags = 0
+    window = 0
+    slidingWindow = []
+
+    try:
+        with open(file, "rb") as f:
+            data_file = f.read()
+    except:
+        print(f"{file} is not a file")
+        return
+
+    chunk = 992
+
     while True:
         try:
-            response, _ = clientSocket.recvfrom(2048)
+            response, serverAddress = clientSocket.recvfrom(2048)
             if response == b"SYN-ACK":
                 print("SYN-ACK packet is received")
                 clientSocket.sendto(b"ACK", serverAddress)
                 print("ACK packet is sent")
-                print("Connection established")
+                print("Connection established\n")
+                print("Data Transfer")
                 break
         except timeout:
             print("Timeout waiting for SYN-ACK. Retrying...")
             clientSocket.sendto(b"SYN", serverAddress)
+
+    while True: #HUSK Å LEGGE TIL EN MÅTE BREAK
+        data = data_file[sequence_number*chunk:(sequence_number+1)*chunk]
+        msg = create_packet(sequence_number, acknowledgment_number, flags, window, data)
+        slidingWindow.append(sequence_number)
+        if len(slidingWindow) > window:
+            slidingWindow = slidingWindow[1:]
+        print(f"{datetime.now} -- packet with seq = {sequence_number} is sent, sliding window = {slidingWindow}")
+        sequence_number += 1
 
 
 if __name__ == "__main__":
