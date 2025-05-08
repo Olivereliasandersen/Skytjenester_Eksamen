@@ -19,7 +19,13 @@ def getArguments():
 
 #Application
 def application():
-    args
+    args = getArguments()
+
+    if args.server == True:
+        startServer()
+    
+    elif args.client == True:
+        startClient()
 
 #Header#
 header_format = '!HHHH'
@@ -86,7 +92,6 @@ def startClient(serverIp, serverPort, windowSize):
     sequence_number = 0
     acknowledgment_number = 0
     flags = 0
-    window = 0
     slidingWindow = []
 
     try:
@@ -115,6 +120,7 @@ def startClient(serverIp, serverPort, windowSize):
     while True: #HUSK Å LEGGE TIL EN MÅTE BREAK
         data = data_file[sequence_number*chunk:(sequence_number+1)*chunk]
         msg = create_packet(sequence_number, acknowledgment_number, flags, window, data)
+        clientSocket.sendto(msg, serverAddress)
         slidingWindow.append(sequence_number)
         if len(slidingWindow) > window:
             slidingWindow = slidingWindow[1:]
