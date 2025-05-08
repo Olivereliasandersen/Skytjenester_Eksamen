@@ -25,7 +25,7 @@ def application():
         startServer()
     
     elif args.client == True:
-        startClient()
+        startClient(args.ip, args.port, args.file, args.window)
 
 #Header#
 header_format = '!HHHH'
@@ -82,7 +82,7 @@ def startServer(serverIp, serverPort, discard_seq):
         
         
 #CLIENT#
-def startClient(serverIp, serverPort, windowSize):
+def startClient(serverIp, serverPort, file, window):
     clientSocket = socket(AF_INET, SOCK_DGRAM)
     serverAddress = (serverIp, serverPort)
     print("Connection Establishment Phase:\n")
@@ -93,6 +93,7 @@ def startClient(serverIp, serverPort, windowSize):
     acknowledgment_number = 0
     flags = 0
     slidingWindow = []
+    chunk = 992
 
     try:
         with open(file, "rb") as f:
@@ -101,7 +102,6 @@ def startClient(serverIp, serverPort, windowSize):
         print(f"{file} is not a file")
         return
 
-    chunk = 992
 
     while True:
         try:
@@ -111,21 +111,29 @@ def startClient(serverIp, serverPort, windowSize):
                 clientSocket.sendto(b"ACK", serverAddress)
                 print("ACK packet is sent")
                 print("Connection established\n")
-                print("Data Transfer")
                 break
         except timeout:
             print("Timeout waiting for SYN-ACK. Retrying...")
             clientSocket.sendto(b"SYN", serverAddress)
 
-    while True: #HUSK Å LEGGE TIL EN MÅTE BREAK
-        data = data_file[sequence_number*chunk:(sequence_number+1)*chunk]
-        msg = create_packet(sequence_number, acknowledgment_number, flags, window, data)
-        clientSocket.sendto(msg, serverAddress)
-        slidingWindow.append(sequence_number)
-        if len(slidingWindow) > window:
-            slidingWindow = slidingWindow[1:]
-        print(f"{datetime.now} -- packet with seq = {sequence_number} is sent, sliding window = {slidingWindow}")
-        sequence_number += 1
+    print("Data Transfer\n")
+    base = 0
+    totalPackets = (len(data_file) + chunk - 1) // chunk
+    ackedPackets = set()
+
+    while base < totalPackets:
+
+        while sequence_number < base + window and sequence_number < totalPackets: #HUSK Å LEGGE TIL EN MÅTE BREAK
+            data = data_file[sequence_number*chunk:(sequence_number+1)*chunk]
+            msg = create_packet(sequence_number, acknowledgment_number, flags, window, data)
+            clientSocket.sendto(msg, serverAddress)
+            slidingWindow.append(sequence_number)
+            if len(slidingWindow) > window:
+                slidingWindow = slidingWindow[1:]
+            print(f"{datetime.now} -- packet with seq = {sequence_number} is sent, sliding window = {slidingWindow}")
+            sequence_number += 1
+
+    
 
 
 if __name__ == "__main__":
