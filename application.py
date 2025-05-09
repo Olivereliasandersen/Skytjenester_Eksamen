@@ -48,11 +48,7 @@ def parse_flags(flags):
 
 #SERVER#
 def startServer(serverIp, serverPort, discard_seq):
-    flags = 0
-    sequence_number = 0
-    acknowledgment_number = 1
     window = 0
-
     file_data = {}
 
     serverSocket = socket(AF_INET, SOCK_DGRAM)
@@ -81,57 +77,89 @@ def startServer(serverIp, serverPort, discard_seq):
             break
         
         
-#CLIENT#
+# Run the client-function
 def startClient(serverIp, serverPort, file, window):
     clientSocket = socket(AF_INET, SOCK_DGRAM)
     serverAddress = (serverIp, serverPort)
     print("Connection Establishment Phase:\n")
     print("SYN packet is sent")
-    clientSocket.sendto(b"SYN", serverAddress)
-
-    sequence_number = 0
-    acknowledgment_number = 0
-    flags = 0
-    slidingWindow = []
-    chunk = 992
-
-    try:
-        with open(file, "rb") as f:
-            data_file = f.read()
-    except:
-        print(f"{file} is not a file")
-        return
-
+    clientSocket.sendto(b"SYN", serverAddress) # Sending SYN to initiate handshake
 
     while True:
         try:
             response, serverAddress = clientSocket.recvfrom(2048)
             if response == b"SYN-ACK":
                 print("SYN-ACK packet is received")
-                clientSocket.sendto(b"ACK", serverAddress)
+                clientSocket.sendto(b"ACK", serverAddress) # Sending ACK to complete handshake
                 print("ACK packet is sent")
                 print("Connection established\n")
                 break
         except timeout:
             print("Timeout waiting for SYN-ACK. Retrying...")
-            clientSocket.sendto(b"SYN", serverAddress)
+            clientSocket.sendto(b"SYN", serverAddress) #Retrys sending the SYN on timeout
 
+    #READING AND PREPARING FILE FOR TRANSFER
     print("Data Transfer\n")
-    base = 0
-    totalPackets = (len(data_file) + chunk - 1) // chunk
-    ackedPackets = set()
+    try:
+        with open(file, "rb") as f:
+            data_file = f.read()                            #reds the file into memory
+    except:
+        print(f"{file} is not a file")
+        return
+    
+    sequence_number = 0                                     # The sequence number to be sent
+    acknowledgment_number = 0
+    flags = 0
+    slidingWindow = []
+    chunk = 992
+    base = 0                                                # The first unacknowledged sequence number        
+    totalPackets = (len(data_file) + chunk - 1) // chunk    # The total number of packets
 
+    #Sliding window loop
     while base < totalPackets:
-
-        while sequence_number < base + window and sequence_number < totalPackets: #HUSK Å LEGGE TIL EN MÅTE BREAK
+        #Sending the packets within the allowed window size
+        while sequence_number < base + window and sequence_number < totalPackets:
             data = data_file[sequence_number*chunk:(sequence_number+1)*chunk]
-            msg = create_packet(sequence_number, acknowledgment_number, flags, window, data)
-            clientSocket.sendto(msg, serverAddress)
+            msg = create_packet(sequence_number, acknowledgment_number, flags, window, data) # Makes the packet
+            clientSocket.sendto(msg, serverAddress)     #Sends the packet
             slidingWindow.append(sequence_number)
-            if len(slidingWindow) > window:
-                slidingWindow = slidingWindow[1:]
+            #if len(slidingWindow) > window:      FINN ut om dette er nødvendig
+            #    slidingWindow = slidingWindow[1:] 
             print(f"{datetime.now} -- packet with seq = {sequence_number} is sent, sliding window = {slidingWindow}")
-            sequence_number += 1
+            sequence_number += 1 # Moves to the next sequence number
+
+        # Waits for the AKCs from the server
+        try:
+            ackData, serverAddress = clientSocket.recvfrom(2048)
+            acknowledgment_number = int.from_bytes(ackData, byteorder="big")
+            print(f"{datetime.now()} -- ACK for packet = {acknowledgment_number} is received")
+
+            # This makes the window slide forward if ACK advances the base
+            if acknowledgment_number >= base:
+                base = acknowledgment_number + 1
+        except timeout:
+            continue   # No ACK was received
+
+        print("DATA Finished\n")
+
+
+        print("Connection Teardown:")
+        print("FIN packet is sent")
+        clientSocket.sendto(b"FIN", serverAddress)  # Sends FIN to initiate closing
+
+        # Waits for the FIN-ACK from the server
+        while True:
+            try:
+                response, serverAddress = clientSocket.recvfrom(2048)
+                if response == b"FIN-ACK":
+                    print("FIN ACK packet is received")
+                    print("Connection Closes")
+                    break
+            except timeout:
+                print("Timeout waiting for FIN-ACK. Retrying...")
+                clientSocket.sendto(b"FIN", serverAddress) # Retrys the FIN if there is no response
+        
+        clientSocket.close() # Closes the socket
 
     
 
